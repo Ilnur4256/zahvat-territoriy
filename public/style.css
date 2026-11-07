@@ -32,14 +32,18 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--me); outlin
 [hidden] { display: none !important; }
 
 #map { position: fixed; inset: 0; background: var(--bg); }
-.leaflet-container { background: var(--bg); font-family: var(--body); }
-.leaflet-tile-pane { filter: invert(1) hue-rotate(185deg) brightness(.82) contrast(.92) saturate(.35); }
-.leaflet-control-attribution { background: rgba(13,17,23,.7) !important; color: var(--muted) !important; font-size: 10px; }
-.leaflet-control-attribution a { color: var(--muted) !important; }
-.leaflet-bottom.leaflet-right { margin-bottom: var(--sab); }
-.leaflet-control-zoom { display: none; }
-@media (pointer: fine) { .leaflet-control-zoom { display: block; } .leaflet-control-zoom a { background: var(--panel-solid) !important; color: var(--fg) !important; border-color: var(--line) !important; } }
-.leaflet-top.leaflet-left { top: calc(var(--sat) + 120px); }
+.maplibregl-map { font-family: var(--body); }
+/* Подпись источника карты (обязательна по условиям OpenFreeMap / OpenStreetMap) */
+.maplibregl-ctrl-bottom-left { margin-bottom: var(--sab); margin-left: var(--sal); }
+.maplibregl-ctrl.maplibregl-ctrl-attrib { background: rgba(13,17,23,.75); color: var(--muted); font-size: 10px; }
+.maplibregl-ctrl-attrib a { color: var(--muted); }
+.maplibregl-ctrl-attrib.maplibregl-compact { background: rgba(13,17,23,.85); }
+.maplibregl-ctrl-attrib-button { filter: invert(1); opacity: .6; }
+.maplibregl-ctrl-top-left { top: calc(var(--sat) + 120px); }
+body.sheet-open .maplibregl-ctrl-bottom-left { bottom: 108px; } /* подпись не прячется под карточкой гекса */
+.maplibregl-ctrl-group { background: var(--panel-solid); border: 1px solid var(--line); }
+.maplibregl-ctrl-group button + button { border-top-color: var(--line); }
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(1); }
 
 /* ── HUD ── */
 #hud {
@@ -168,7 +172,7 @@ input::placeholder { color: #5b6576; }
   #sheet { left: max(12px, var(--sal)); right: auto; width: 440px; padding-left: 0; padding-right: 0; }
   #fab { bottom: calc(var(--sab) + 24px); }
   #toasts { bottom: calc(var(--sab) + 24px); }
-  .leaflet-top.leaflet-left { top: calc(var(--sat) + 80px); }
+  .maplibregl-ctrl-top-left { top: calc(var(--sat) + 80px); }
   #gpsBanner { top: calc(var(--sat) + 70px); }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;600;700&display=swap">
-<link rel="stylesheet" href="/vendor/leaflet.css">
+<link rel="stylesheet" href="/vendor/maplibre/maplibre-gl.css">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -128,8 +128,12 @@
   </div>
 </div>
 
-<script src="/vendor/leaflet.js"></script>
 <script src="/vendor/h3.js"></script>
-<script src="/app.js"></script>
+<script type="module">
+  // MapLibre поставляется как ES-модуль; после загрузки запускаем игру
+  import * as maplibregl from '/vendor/maplibre/maplibre-gl.mjs';
+  window.maplibregl = maplibregl;
+  const s = document.createElement('script'); s.src = '/app.js'; document.body.appendChild(s);
+</script>
 </body>
 </html>

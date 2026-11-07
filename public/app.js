@@ -19,53 +19,81 @@
   let selected = null;         // h3 id
   let followMe = true;
   const cells = new Map();     // h3 -> {id,f,hp,owner,clan}
-  const polys = new Map();     // h3 -> L.Polygon
   let regions = new Set();
 
-  // ───────── Карта ─────────
-  const map = L.map('map', { zoomControl: true, attributionControl: true, preferCanvas: true, minZoom: 3, maxZoom: 19, worldCopyJump: true })
-    .setView([59.9087, 30.5139], 15); // Кудрово по умолчанию
-  // Тайлы OpenStreetMap; тёмный вид делается CSS-фильтром (.leaflet-tile-pane в style.css)
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  }).addTo(map);
-  const renderer = L.canvas({ padding: 0.3 });
-  const gridLayer = L.layerGroup().addTo(map);
-  const cellLayer = L.layerGroup().addTo(map);
-  const zoneLayer = L.layerGroup().addTo(map);
-  const selLayer = L.layerGroup().addTo(map);
-  let meMarker = null, accCircle = null;
+  // ───────── Карта: MapLibre + OpenFreeMap (данные OpenStreetMap) ─────────
+  const ML = window.maplibregl;
+  const map = new ML.Map({
+    container: 'map',
+    style: 'https://tiles.openfreemap.org/styles/dark',
+    center: [30.5139, 59.9087], // Кудрово по умолчанию
+    zoom: 14.5, minZoom: 3, maxZoom: 19,
+    attributionControl: false,
+    dragRotate: false, pitchWithRotate: false, touchPitch: false,
+  });
+  map.touchZoomRotate.disableRotation();
+  const narrow = matchMedia('(max-width: 640px)').matches;
+  const attrib = new ML.AttributionControl({ compact: narrow });
+  map.addControl(attrib, 'bottom-left');
+  // на телефоне подпись свёрнута в значок ⓘ, полный текст — по нажатию
+  if (narrow) map.once('idle', () => document.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show'));
+  if (matchMedia('(pointer: fine)').matches) map.addControl(new ML.NavigationControl({ showCompass: false }), 'top-left');
 
-  const boundary = (id) => h3.cellToBoundary(id);
+  const EMPTY = { type: 'FeatureCollection', features: [] };
+  const boundary = (id) => { const r = h3.cellToBoundary(id, true); return r; }; // [lng,lat], замкнутое кольцо
+  const hexFeature = (id, props = {}) => ({ type: 'Feature', properties: { id, ...props }, geometry: { type: 'Polygon', coordinates: [boundary(id)] } });
+  let mapReady = false;
+  const pending = new Set();
+  function setData(src, data) { const s = mapReady && map.getSource(src); if (s) s.setData(data); }
 
-  function cellStyle(c) {
-    const col = COLORS[c.f];
-    return { renderer, color: col, weight: 1.2, opacity: 0.85, fillColor: col, fillOpacity: 0.18 + c.hp * 0.08, interactive: false };
+  map.on('load', () => {
+    for (const id of ['grid', 'cells', 'flash', 'zone', 'sel', 'acc']) map.addSource(id, { type: 'geojson', data: EMPTY });
+    const before = map.getStyle().layers.find(l => l.type === 'symbol')?.id; // гексы под подписями улиц
+    map.addLayer({ id: 'grid-line', type: 'line', source: 'grid', paint: { 'line-color': '#ffffff', 'line-opacity': 0.1, 'line-width': 0.6 } }, before);
+    map.addLayer({ id: 'cells-fill', type: 'fill', source: 'cells', paint: {
+      'fill-color': ['match', ['get', 'f'], 1, COLORS[1], COLORS[2]],
+      'fill-opacity': ['+', 0.28, ['*', ['get', 'hp'], 0.09]],
+    } }, before);
+    map.addLayer({ id: 'cells-line', type: 'line', source: 'cells', paint: { 'line-color': ['match', ['get', 'f'], 1, COLORS[1], COLORS[2]], 'line-width': 1.2, 'line-opacity': 0.9 } }, before);
+    map.addLayer({ id: 'flash-fill', type: 'fill', source: 'flash', paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.75 } });
+    map.addLayer({ id: 'zone-fill', type: 'fill', source: 'zone', paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.04 } });
+    map.addLayer({ id: 'zone-line', type: 'line', source: 'zone', paint: { 'line-color': '#ffffff', 'line-width': 2, 'line-opacity': 0.75, 'line-dasharray': [3, 3] } });
+    map.addLayer({ id: 'acc-fill', type: 'fill', source: 'acc', paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.05 } });
+    map.addLayer({ id: 'sel-line', type: 'line', source: 'sel', paint: { 'line-color': '#ffffff', 'line-width': 3 } });
+    mapReady = true;
+    redrawCells(); drawGrid(); drawZone(); drawMe(); if (selected) select(selected);
+  });
+
+  // Гексы перерисовываются одним обновлением источника, не чаще раза в кадр
+  let cellsDirty = false;
+  function redrawCells() {
+    if (cellsDirty) return; cellsDirty = true;
+    requestAnimationFrame(() => {
+      cellsDirty = false;
+      const fs = [];
+      for (const c of cells.values()) if (c.f) fs.push(hexFeature(c.id, { f: c.f, hp: c.hp }));
+      setData('cells', { type: 'FeatureCollection', features: fs });
+    });
   }
   function drawCell(c, flash) {
-    let p = polys.get(c.id);
-    if (!c.f) { if (p) { cellLayer.removeLayer(p); polys.delete(c.id); } return; }
-    const st = cellStyle(c);
-    if (!p) { p = L.polygon(boundary(c.id), st); cellLayer.addLayer(p); polys.set(c.id, p); }
-    else p.setStyle(st);
-    if (flash) {
-      p.setStyle({ fillOpacity: 0.95, weight: 3, color: '#ffffff' });
-      setTimeout(() => p.setStyle(st), 450);
-    }
+    redrawCells();
+    if (flash && c.f) { pending.add(c.id); flashNow(); setTimeout(() => { pending.delete(c.id); flashNow(); }, 450); }
+  }
+  function flashNow() { setData('flash', { type: 'FeatureCollection', features: [...pending].map(id => hexFeature(id)) }); }
+
+  function boundsRing(pad) {
+    const b = map.getBounds();
+    const dLat = (b.getNorth() - b.getSouth()) * pad, dLng = (b.getEast() - b.getWest()) * pad;
+    const s = b.getSouth() - dLat, n = b.getNorth() + dLat, w = b.getWest() - dLng, e = b.getEast() + dLng;
+    return [[s, w], [n, w], [n, e], [s, e]];
   }
 
   function drawGrid() {
-    gridLayer.clearLayers();
-    if (!CFG || map.getZoom() < 15) return;
-    const b = map.getBounds().pad(0.1);
-    const ring = [[b.getSouth(), b.getWest()], [b.getNorth(), b.getWest()], [b.getNorth(), b.getEast()], [b.getSouth(), b.getEast()]];
+    if (!CFG || map.getZoom() < 13.5) { setData('grid', EMPTY); return; }
     let ids;
-    try { ids = h3.polygonToCells(ring, CFG.res); } catch { return; }
-    if (ids.length > 2500) return;
-    for (const id of ids) {
-      gridLayer.addLayer(L.polygon(boundary(id), { renderer, color: '#ffffff', weight: 0.6, opacity: 0.09, fill: false, interactive: false }));
-    }
+    try { ids = h3.polygonToCells(boundsRing(0.1), CFG.res); } catch { return; }
+    if (ids.length > 3000) { setData('grid', EMPTY); return; }
+    setData('grid', { type: 'FeatureCollection', features: ids.map(id => hexFeature(id)) });
   }
 
   function zoneCells() {
@@ -73,31 +101,36 @@
     return new Set(h3.gridDisk(h3.latLngToCell(pos.lat, pos.lng, CFG.res), CFG.ring));
   }
   function drawZone() {
-    zoneLayer.clearLayers();
-    if (!pos || !CFG) return;
-    const ids = [...zoneCells()];
-    const shape = h3.cellsToMultiPolygon(ids, false);
-    for (const poly of shape) {
-      zoneLayer.addLayer(L.polygon(poly, { renderer, color: '#ffffff', weight: 2, opacity: 0.75, dashArray: '6 6', fillColor: '#ffffff', fillOpacity: 0.04, interactive: false }));
-    }
+    if (!pos || !CFG) { setData('zone', EMPTY); return; }
+    const mp = h3.cellsToMultiPolygon([...zoneCells()], true);
+    setData('zone', { type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: mp } });
   }
 
+  let meMarker = null;
+  function circlePoly(lat, lng, r) {
+    const pts = [], R = 6371000;
+    for (let i = 0; i <= 48; i++) {
+      const a = (i / 48) * 2 * Math.PI;
+      pts.push([lng + (r * Math.sin(a)) / (R * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI, lat + (r * Math.cos(a)) / R * 180 / Math.PI]);
+    }
+    return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [pts] } };
+  }
   function drawMe() {
     if (!pos) return;
-    const ll = [pos.lat, pos.lng];
     if (!meMarker) {
-      meMarker = L.marker(ll, { icon: L.divIcon({ className: '', html: '<div class="me-marker"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }), interactive: false, keyboard: false }).addTo(map);
-      accCircle = L.circle(ll, { renderer, radius: pos.acc, color: '#ffffff', weight: 1, opacity: 0.25, fillOpacity: 0.05, interactive: false }).addTo(map);
-    } else { meMarker.setLatLng(ll); accCircle.setLatLng(ll); accCircle.setRadius(Math.min(pos.acc, 2000)); }
+      const el = document.createElement('div'); el.className = 'me-marker';
+      meMarker = new ML.Marker({ element: el }).setLngLat([pos.lng, pos.lat]).addTo(map);
+    } else meMarker.setLngLat([pos.lng, pos.lat]);
+    setData('acc', circlePoly(pos.lat, pos.lng, Math.min(pos.acc, 2000)));
   }
 
   function updateRegions() {
     if (!CFG || !ws || ws.readyState !== 1) return;
-    const b = map.getBounds().pad(0.2);
-    const ring = [[b.getSouth(), b.getWest()], [b.getNorth(), b.getWest()], [b.getNorth(), b.getEast()], [b.getSouth(), b.getEast()]];
+    const ring = boundsRing(0.2);
     const set = new Set();
     try { for (const r of h3.polygonToCells(ring, CFG.regionRes)) set.add(r); } catch {}
-    for (const ll of [...ring, [map.getCenter().lat, map.getCenter().lng]]) {
+    const c = map.getCenter();
+    for (const ll of [...ring, [c.lat, c.lng]]) {
       for (const r of h3.gridDisk(h3.latLngToCell(ll[0], ll[1], CFG.regionRes), 1)) set.add(r);
     }
     if (pos) for (const r of h3.gridDisk(h3.latLngToCell(pos.lat, pos.lng, CFG.regionRes), 1)) set.add(r);
@@ -105,7 +138,9 @@
     if (list.length > 80) list = list.slice(0, 80);
     // убираем гексы из регионов, на которые больше не подписаны
     const keep = new Set(list);
-    for (const [id] of cells) if (!keep.has(h3.cellToParent(id, CFG.regionRes))) { cells.delete(id); drawCell({ id, f: 0 }); }
+    let removed = false;
+    for (const [id] of cells) if (!keep.has(h3.cellToParent(id, CFG.regionRes))) { cells.delete(id); removed = true; }
+    if (removed) redrawCells();
     regions = keep;
     send({ t: 'view', regions: list });
   }
@@ -113,9 +148,9 @@
   // ───────── Выбор гекса и действие ─────────
   function select(id) {
     selected = id;
-    selLayer.clearLayers();
-    if (!id) { $('sheet').hidden = true; return; }
-    selLayer.addLayer(L.polygon(boundary(id), { renderer, color: '#ffffff', weight: 3, opacity: 1, fill: false, interactive: false }));
+    document.body.classList.toggle('sheet-open', !!id);
+    if (!id) { setData('sel', EMPTY); $('sheet').hidden = true; return; }
+    setData('sel', hexFeature(id));
     renderSheet();
   }
 
@@ -158,10 +193,10 @@
   map.on('click', (e) => {
     if (!CFG || !me) return;
     if (devMode) {
-      setPos({ lat: e.latlng.lat, lng: e.latlng.lng, acc: 5 }, true);
+      setPos({ lat: e.lngLat.lat, lng: e.lngLat.lng, acc: 5 }, true);
       return;
     }
-    const id = h3.latLngToCell(e.latlng.lat, e.latlng.lng, CFG.res);
+    const id = h3.latLngToCell(e.lngLat.lat, e.lngLat.lng, CFG.res);
     select(id === selected ? null : id);
   });
   map.on('dragstart', () => { followMe = false; });
@@ -181,7 +216,7 @@
     drawMe(); drawZone();
     const t = Date.now();
     if (manual || t - lastPosSent > 3000) { send({ t: 'pos', lat: p.lat, lng: p.lng, acc: p.acc, manual: manual || undefined }); lastPosSent = t; }
-    if (followMe) map.panTo([p.lat, p.lng], { animate: true });
+    if (followMe) map.easeTo({ center: [p.lng, p.lat], duration: 600 });
     renderSheet();
     $('gpsBanner').hidden = true;
   }
@@ -203,7 +238,7 @@
 
   $('btnLocate').addEventListener('click', () => {
     followMe = true;
-    if (pos) map.setView([pos.lat, pos.lng], Math.max(map.getZoom(), 16));
+    if (pos) map.easeTo({ center: [pos.lng, pos.lat], zoom: Math.max(map.getZoom(), 14.5) });
     else showBanner('Позиция ещё не определена');
   });
 
