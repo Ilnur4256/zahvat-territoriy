@@ -322,10 +322,12 @@ function incomeTick() {
 }
 
 // ───────────────────────── HTTP ─────────────────────────
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.mjs': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
 const STATIC = {
-  '/vendor/leaflet.js': path.join(__dirname, 'node_modules/leaflet/dist/leaflet.js'),
-  '/vendor/leaflet.css': path.join(__dirname, 'node_modules/leaflet/dist/leaflet.css'),
+  '/vendor/maplibre/maplibre-gl.mjs': path.join(__dirname, 'node_modules/maplibre-gl/dist/maplibre-gl.mjs'),
+  '/vendor/maplibre/maplibre-gl-worker.mjs': path.join(__dirname, 'node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs'),
+  '/vendor/maplibre/maplibre-gl-shared.mjs': path.join(__dirname, 'node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs'),
+  '/vendor/maplibre/maplibre-gl.css': path.join(__dirname, 'node_modules/maplibre-gl/dist/maplibre-gl.css'),
   '/vendor/h3.js': path.join(__dirname, 'node_modules/h3-js/dist/h3-js.umd.js'),
 };
 const PUBLIC = path.join(__dirname, 'public');
