@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Захват территорий</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/vendor/leaflet.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="map" aria-label="Карта территорий"></div>
+
+<!-- Верхняя панель -->
+<header id="hud" hidden>
+  <div class="score" id="score" title="Доля захваченных гексов">
+    <div class="score-bar"><span class="f1" id="scoreF1"></span><span class="f2" id="scoreF2"></span></div>
+    <div class="score-nums"><span class="c1" id="scoreN1">0</span><span class="online" id="online">онлайн: 0</span><span class="c2" id="scoreN2">0</span></div>
+  </div>
+  <div class="stats">
+    <span class="chip faction-chip" id="meFaction">—</span>
+    <span class="chip" title="Монеты"><i class="ic coin"></i><b id="meCoins">0</b></span>
+    <span class="chip" title="Энергия: тратится на захват и атаку"><i class="ic bolt"></i><b id="meEnergy">0</b><small id="meEnergyMax">/20</small></span>
+    <span class="chip" title="Ваши гексы"><i class="ic hex"></i><b id="meCells">0</b></span>
+  </div>
+</header>
+
+<!-- Правые кнопки -->
+<nav id="fab" hidden>
+  <button class="fab" id="btnLocate" aria-label="Моя позиция" title="Моя позиция"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7.5" fill="none"/></svg></button>
+  <button class="fab" id="btnClan" aria-label="Клан" title="Клан"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z" fill="none"/></svg></button>
+  <button class="fab" id="btnTop" aria-label="Рейтинг" title="Рейтинг"><svg viewBox="0 0 24 24"><path d="M5 21V11M12 21V4M19 21v-7" fill="none"/></svg></button>
+  <button class="fab dev" id="btnDev" aria-label="Тестовый GPS" title="Тест: ставить позицию нажатием на карту" hidden><svg viewBox="0 0 24 24"><path d="M12 22s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z" fill="none"/><circle cx="12" cy="10" r="2.5"/></svg></button>
+</nav>
+
+<!-- Нижняя карточка гекса -->
+<section id="sheet" hidden>
+  <div class="sheet-row">
+    <div class="sheet-info">
+      <div class="sheet-title" id="cellTitle">Нейтральная зона</div>
+      <div class="sheet-sub" id="cellSub">Подойдите ближе, чтобы захватить</div>
+      <div class="hp" id="cellHp"></div>
+    </div>
+    <button class="act" id="btnAct" disabled>Захватить</button>
+  </div>
+</section>
+
+<div id="gpsBanner" hidden></div>
+<div id="toasts" aria-live="polite"></div>
+
+<!-- Онбординг -->
+<div class="modal" id="onboard" hidden>
+  <div class="card">
+    <h1>Захват<br>территорий</h1>
+    <p class="lead">Мир поделён на гексы. Захватывайте их рядом с собой, удерживайте и получайте монеты. Чем больше ездите — тем больше территории.</p>
+    <label class="field">
+      <span>Ваш позывной</span>
+      <input id="inName" maxlength="20" autocomplete="nickname" placeholder="Например, Север-7">
+    </label>
+    <div class="label">Выберите фракцию — навсегда</div>
+    <div class="factions">
+      <button class="fcard f1" data-f="1"><span class="sw"></span><b>Фракция 1</b><small id="fInfo1">—</small></button>
+      <button class="fcard f2" data-f="2"><span class="sw"></span><b>Фракция 2</b><small id="fInfo2">—</small></button>
+    </div>
+    <button class="primary" id="btnStart" disabled>В бой</button>
+    <p class="err" id="onErr"></p>
+  </div>
+</div>
+
+<!-- Кланы -->
+<div class="modal" id="clanModal" hidden>
+  <div class="card">
+    <button class="close" data-close aria-label="Закрыть">×</button>
+    <h2 id="clanTitle">Клан</h2>
+    <div id="clanMine" hidden>
+      <div class="clan-big"><span class="tag" id="myClanTag"></span><b id="myClanName"></b></div>
+      <dl class="kv">
+        <dt>Участники</dt><dd id="myClanMembers"></dd>
+        <dt>Казна клана</dt><dd id="myClanTreasury"></dd>
+        <dt>Ваша роль</dt><dd id="myClanRole"></dd>
+      </dl>
+      <p class="hint">Каждый гекс, захваченный участником, пополняет казну клана на 20% сверх его личного дохода.</p>
+      <button class="ghost danger" id="btnLeave">Выйти из клана</button>
+    </div>
+    <div id="clanNone" hidden>
+      <div class="tabs">
+        <button class="tab on" data-tab="join">Вступить</button>
+        <button class="tab" data-tab="create">Создать</button>
+      </div>
+      <div data-pane="join">
+        <ul class="list" id="clanList"><li class="empty">Загрузка…</li></ul>
+      </div>
+      <div data-pane="create" hidden>
+        <label class="field"><span>Название</span><input id="inClanName" maxlength="24" placeholder="Кудровские волки"></label>
+        <label class="field"><span>Тег (2–5 символов)</span><input id="inClanTag" maxlength="5" placeholder="KDW"></label>
+        <button class="primary" id="btnCreateClan">Создать клан</button>
+      </div>
+      <button class="ghost" data-close id="btnSkipClan">Играть без клана</button>
+    </div>
+  </div>
+</div>
+
+<!-- Рейтинг -->
+<div class="modal" id="topModal" hidden>
+  <div class="card">
+    <button class="close" data-close aria-label="Закрыть">×</button>
+    <h2>Рейтинг</h2>
+    <div class="fac-totals" id="facTotals"></div>
+    <h3>Кланы</h3>
+    <ol class="list rank" id="topClans"></ol>
+    <h3>Игроки</h3>
+    <ol class="list rank" id="topPlayers"></ol>
+    <h3>Правила</h3>
+    <ul class="rules">
+      <li>Захватывать можно только свой гекс и соседние (≈ 350 м вокруг вас по GPS).</li>
+      <li>Захват нейтрального гекса и атака стоят 1 энергию. Энергия: +1 каждые 30 секунд, максимум 20.</li>
+      <li>У гекса есть прочность до 5. Каждая атака снимает 1, при нуле гекс переходит к вам.</li>
+      <li>Своё можно укрепить: +1 прочности за <span id="ruleCost">5</span> монет.</li>
+      <li>Каждый гекс приносит владельцу <span id="ruleIncome">6</span> монет в час.</li>
+    </ul>
+  </div>
+</div>
+
+<script src="/vendor/leaflet.js"></script>
+<script src="/vendor/h3.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
